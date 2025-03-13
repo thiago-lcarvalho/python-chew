@@ -8,6 +8,8 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter.ttk import Progressbar
+import threading
+import traceback
 
 class ChewingCounter:
     def __init__(self, threshold=0.015, view='front'):
@@ -264,6 +266,7 @@ class ChewingCounterApp:
         
         self.video_path = None
         self.output_path = "chewing_data.xlsx"
+        self.processing_thread = None
         
         self.create_widgets()
 
@@ -280,32 +283,70 @@ class ChewingCounterApp:
         
         self.start_button = tk.Button(self.root, text="Start Processing", command=self.start_processing, state=tk.DISABLED)
         self.start_button.pack(pady=10)
+        
+        self.status_label = tk.Label(self.root, text="")
+        self.status_label.pack(pady=5)
 
     def upload_video(self):
         """Open a file dialog to select a video file."""
         self.video_path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4;*.avi;*.mov")])
         if self.video_path:
-            messagebox.showinfo("Selected Video", f"Selected video: {os.path.basename(self.video_path)}")
+            self.status_label.config(text=f"Selected: {os.path.basename(self.video_path)}")
             self.start_button.config(state=tk.NORMAL)
 
     def start_processing(self):
-        """Start processing the video file."""
+        """Start processing the video file in a separate thread."""
         if not self.video_path:
             messagebox.showerror("Error", "Please upload a video file first.")
             return
         
+        # Disable the start button during processing
+        self.start_button.config(state=tk.DISABLED)
+        self.upload_button.config(state=tk.DISABLED)
+        
+        # Reset progress bar
         self.progress_bar['value'] = 0
+        self.status_label.config(text="Processing video...")
         self.root.update_idletasks()
         
-        # Process the video
-        self.process_video(self.video_path, self.output_path)
+        # Start processing in a separate thread
+        self.processing_thread = threading.Thread(target=self.process_video_thread)
+        self.processing_thread.daemon = True
+        self.processing_thread.start()
+
+    def process_video_thread(self):
+        """Process the video in a separate thread."""
+        try:
+            self.process_video(self.video_path, self.output_path)
+        except Exception as e:
+            # Use after() to schedule GUI updates from the thread
+            self.root.after(0, lambda: self.show_error(str(e), traceback.format_exc()))
+    
+    def show_error(self, error_msg, traceback_info):
+        """Show error message in the GUI."""
+        print(f"Error: {error_msg}")
+        print(f"Traceback: {traceback_info}")
+        messagebox.showerror("Error", f"An error occurred: {error_msg}")
+        self.status_label.config(text="Error occurred during processing")
+        self.start_button.config(state=tk.NORMAL)
+        self.upload_button.config(state=tk.NORMAL)
+
+    def update_progress(self, value, status_text=None):
+        """Update progress bar from the thread."""
+        self.progress_bar['value'] = value
+        if status_text:
+            self.status_label.config(text=status_text)
+        self.root.update_idletasks()
 
     def process_video(self, video_path, output_path):
         """Process the video file and count chewing movements."""
         cap = cv2.VideoCapture(video_path)
         
         if not cap.isOpened():
-            messagebox.showerror("Error", f"Could not open video file {video_path}")
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Could not open video file {video_path}"))
+            self.root.after(0, lambda: self.status_label.config(text="Error: Could not open video file"))
+            self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
+            self.root.after(0, lambda: self.upload_button.config(state=tk.NORMAL))
             return
         
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -320,19 +361,29 @@ class ChewingCounterApp:
             if not ret:
                 break
             
-            if frame_idx % 3 == 0:
+            if frame_idx % 3 == 0:  # Process every 3rd frame
                 counter.process_frame(frame)
                 
-                # Update progress bar
+                # Update progress bar (use after() to schedule GUI updates from the thread)
                 progress = (frame_idx / frame_count) * 100
-                self.progress_bar['value'] = progress
-                self.root.update_idletasks()
+                self.root.after(0, lambda p=progress: self.update_progress(p, f"Processing: {int(p)}%"))
             
             frame_idx += 1
         
         cap.release()
-        counter.save_to_excel(output_path)
-        messagebox.showinfo("Processing Complete", f"Chewing data saved to {output_path}")
+        
+        # Save results
+        try:
+            counter.save_to_excel(output_path)
+            self.root.after(0, lambda: self.update_progress(100, f"Complete! Detected {counter.chew_count} chews"))
+            self.root.after(0, lambda: messagebox.showinfo("Processing Complete", 
+                                                          f"Chewing data saved to {output_path}\nDetected {counter.chew_count} chews"))
+        except Exception as e:
+            self.root.after(0, lambda: self.show_error(f"Error saving results: {str(e)}", traceback.format_exc()))
+        
+        # Re-enable buttons
+        self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
+        self.root.after(0, lambda: self.upload_button.config(state=tk.NORMAL))
 
 if __name__ == "__main__":
     root = tk.Tk()
