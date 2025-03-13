@@ -1,0 +1,3 @@
+([('chewing_counter_gui',
+   '/Users/thiagocarvalho/Developer/python-chewing/dist/chewing_counter_gui',
+   'EXECUTABLE')],)
