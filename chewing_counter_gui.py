@@ -10,18 +10,22 @@ from tkinter import filedialog, messagebox
 from tkinter.ttk import Progressbar
 import threading
 import traceback
+import sys
 
 class ChewingCounter:
     def __init__(self, threshold=0.015, view='front'):
         """Initialize the chewing counter with face detection."""
+        # Determine if we're running in a PyInstaller bundle
+        self.is_bundled = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+        
         # Load face detector
-        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        self.face_cascade = self.load_cascade('haarcascade_frontalface_default.xml')
         
         # Load profile face detector for side view
-        self.profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
+        self.profile_cascade = self.load_cascade('haarcascade_profileface.xml')
         
         # Load facial landmark detector (for mouth region)
-        self.mouth_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
+        self.mouth_cascade = self.load_cascade('haarcascade_smile.xml')
         
         self.threshold = threshold
         self.view = view
@@ -39,6 +43,36 @@ class ChewingCounter:
         self.prev_jaw_region = None
         self.jaw_movement_history = []
         self.side_threshold = 0.5  # Threshold for side view movement detection
+        
+    def load_cascade(self, cascade_file):
+        """Load a cascade classifier, handling both bundled and non-bundled cases."""
+        if self.is_bundled:
+            # When running as a bundled executable, we need to extract the cascade files
+            try:
+                # First, try to load from the current directory
+                cascade_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), cascade_file)
+                if os.path.exists(cascade_path):
+                    return cv2.CascadeClassifier(cascade_path)
+                
+                # If that fails, try to load from the temp directory where PyInstaller extracts files
+                cascade_path = os.path.join(sys._MEIPASS, 'cv2', 'data', cascade_file)
+                if os.path.exists(cascade_path):
+                    return cv2.CascadeClassifier(cascade_path)
+                
+                # If that also fails, try to load from the cv2 data directory
+                cascade_path = os.path.join(sys._MEIPASS, 'cv2', 'data', 'haarcascades', cascade_file)
+                if os.path.exists(cascade_path):
+                    return cv2.CascadeClassifier(cascade_path)
+                
+                # If all else fails, try the standard OpenCV path
+                return cv2.CascadeClassifier(cv2.data.haarcascades + cascade_file)
+            except Exception as e:
+                print(f"Error loading cascade file {cascade_file}: {e}")
+                # Return an empty classifier as a fallback
+                return cv2.CascadeClassifier()
+        else:
+            # When running normally, use the standard OpenCV path
+            return cv2.CascadeClassifier(cv2.data.haarcascades + cascade_file)
         
     def process_frame(self, frame):
         """Process a single frame to detect chewing motion."""
