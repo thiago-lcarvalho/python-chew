@@ -46,33 +46,53 @@ class ChewingCounter:
         
     def load_cascade(self, cascade_file):
         """Load a cascade classifier, handling both bundled and non-bundled cases."""
+        # List of possible locations for the cascade file
+        possible_locations = []
+        
+        # First priority: Check in a local 'cascades' directory
+        local_cascade_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cascades', cascade_file)
+        possible_locations.append(local_cascade_path)
+        
+        # Second priority: Check in the current directory
+        current_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), cascade_file)
+        possible_locations.append(current_dir_path)
+        
+        # If running as a bundled executable
         if self.is_bundled:
-            # When running as a bundled executable, we need to extract the cascade files
-            try:
-                # First, try to load from the current directory
-                cascade_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), cascade_file)
-                if os.path.exists(cascade_path):
-                    return cv2.CascadeClassifier(cascade_path)
-                
-                # If that fails, try to load from the temp directory where PyInstaller extracts files
-                cascade_path = os.path.join(sys._MEIPASS, 'cv2', 'data', cascade_file)
-                if os.path.exists(cascade_path):
-                    return cv2.CascadeClassifier(cascade_path)
-                
-                # If that also fails, try to load from the cv2 data directory
-                cascade_path = os.path.join(sys._MEIPASS, 'cv2', 'data', 'haarcascades', cascade_file)
-                if os.path.exists(cascade_path):
-                    return cv2.CascadeClassifier(cascade_path)
-                
-                # If all else fails, try the standard OpenCV path
-                return cv2.CascadeClassifier(cv2.data.haarcascades + cascade_file)
-            except Exception as e:
-                print(f"Error loading cascade file {cascade_file}: {e}")
-                # Return an empty classifier as a fallback
-                return cv2.CascadeClassifier()
-        else:
-            # When running normally, use the standard OpenCV path
-            return cv2.CascadeClassifier(cv2.data.haarcascades + cascade_file)
+            # Check in PyInstaller's temp directory
+            meipass_path = os.path.join(sys._MEIPASS, cascade_file)
+            possible_locations.append(meipass_path)
+            
+            # Check in PyInstaller's temp directory under cv2/data
+            meipass_cv2_path = os.path.join(sys._MEIPASS, 'cv2', 'data', cascade_file)
+            possible_locations.append(meipass_cv2_path)
+            
+            # Check in PyInstaller's temp directory under cv2/data/haarcascades
+            meipass_haarcascades_path = os.path.join(sys._MEIPASS, 'cv2', 'data', 'haarcascades', cascade_file)
+            possible_locations.append(meipass_haarcascades_path)
+        
+        # Last resort: Try the standard OpenCV path
+        opencv_path = cv2.data.haarcascades + cascade_file
+        possible_locations.append(opencv_path)
+        
+        # Try each location until we find one that exists
+        for location in possible_locations:
+            print(f"Trying to load cascade from: {location}")
+            if os.path.exists(location):
+                print(f"Found cascade file at: {location}")
+                classifier = cv2.CascadeClassifier(location)
+                # Verify the classifier was loaded properly
+                if not classifier.empty():
+                    print(f"Successfully loaded cascade classifier from {location}")
+                    return classifier
+                else:
+                    print(f"Failed to load classifier from {location} (empty classifier)")
+            else:
+                print(f"Cascade file not found at: {location}")
+        
+        # If we get here, we couldn't find a valid cascade file
+        print(f"ERROR: Could not find cascade file {cascade_file} in any location")
+        return cv2.CascadeClassifier()
         
     def process_frame(self, frame):
         """Process a single frame to detect chewing motion."""

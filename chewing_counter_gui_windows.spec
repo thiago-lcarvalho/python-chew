@@ -10,16 +10,24 @@ block_cipher = None
 import cv2
 cascade_path = os.path.dirname(cv2.__file__) + '/data/'
 
-# Collect all the Haar cascade XML files
+# Collect all the Haar cascade XML files from OpenCV
 cascade_files = [(os.path.join(cascade_path, f), 'cv2/data/') 
                  for f in os.listdir(cascade_path) if f.endswith('.xml')]
 
-# For Windows, we'll also copy the files to the root directory for easier access
-windows_cascade_files = [(os.path.join(cascade_path, f), './') 
-                         for f in os.listdir(cascade_path) if f.endswith('.xml')]
-
-# Combine the data files
-all_data_files = cascade_files + windows_cascade_files if sys.platform == 'win32' else cascade_files
+# Include the local cascades directory if it exists
+local_cascade_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cascades')
+if os.path.exists(local_cascade_dir):
+    local_cascade_files = [(os.path.join(local_cascade_dir, f), 'cascades/') 
+                          for f in os.listdir(local_cascade_dir) if f.endswith('.xml')]
+    # Also copy to root directory for easier access
+    root_cascade_files = [(os.path.join(local_cascade_dir, f), './') 
+                         for f in os.listdir(local_cascade_dir) if f.endswith('.xml')]
+    all_data_files = cascade_files + local_cascade_files + root_cascade_files
+else:
+    # For Windows, also copy to root directory for easier access
+    windows_cascade_files = [(os.path.join(cascade_path, f), './') 
+                            for f in os.listdir(cascade_path) if f.endswith('.xml')]
+    all_data_files = cascade_files + windows_cascade_files
 
 a = Analysis(
     ['chewing_counter_gui.py'],
@@ -52,7 +60,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=True,  # Set to True for debugging
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
